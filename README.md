@@ -1,6 +1,6 @@
 # SpotifyCare AI Support Agent
 
-> **Hiver SDE Intern Take-Home** — Turn a noisy real-world dataset into a working AI support system and prove it works.
+> 
 
 **Brand**: SpotifyCare (`@SpotifyCares`)  
 **LLM**: Google Gemini Flash Lite (`gemini-flash-lite-latest`)  
