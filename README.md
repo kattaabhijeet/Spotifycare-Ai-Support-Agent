@@ -4,6 +4,7 @@
 
 **Brand**: SpotifyCare (`@SpotifyCares`)  
 **LLM**: Google Gemini Flash Lite (`gemini-flash-lite-latest`)  
+**Embeddings**: `all-MiniLM-L6-v2` via sentence-transformers (local, free)  
 **Dataset**: Customer Support on Twitter (Kaggle)  
 
 ---
@@ -12,74 +13,63 @@
 
 ### Prerequisites
 
-```bash
-python --version      # 3.10+
-pip --version         # 23+
-```
-
-**You need**:
-- An OpenAI API key (set in `.env`)  
-- The Kaggle dataset file `twcs.csv` (~600 MB)  
+- Python 3.10+
+- A free Google Gemini API key — get one at [aistudio.google.com](https://aistudio.google.com/app/apikey)
+- The Kaggle dataset file `twcs.csv` (~600 MB)
 
 ---
 
 ### Step 1 — Clone & install
 
 ```bash
-git clone <your-repo-url>
-cd hiver-support-agent
+git clone https://github.com/kattaabhijeet/Spotifycare-Ai-Support-Agent.git
+cd Spotifycare-Ai-Support-Agent
 pip install -r requirements.txt
 ```
 
 ---
 
-### Step 2 — Set your OpenAI API key
+### Step 2 — Add your Gemini API key
 
 ```bash
 cp .env.example .env
-# Edit .env and replace the placeholder with your real key:
-# OPENAI_API_KEY=sk-...
+# Open .env and set your key:
+# GOOGLE_API_KEY=your-key-here
 ```
 
 ---
 
 ### Step 3 — Download the dataset
 
-**Option A — Kaggle CLI** (recommended if you have `kaggle.json`):
+**Kaggle CLI** (if you have `kaggle.json` set up):
 ```bash
-pip install kaggle
-# Place kaggle.json in ~/.kaggle/kaggle.json (Linux/Mac) or %USERPROFILE%\.kaggle\kaggle.json (Windows)
 kaggle datasets download -d thoughtvector/customer-support-on-twitter -p data/raw/ --unzip
 ```
 
-**Option B — Manual download**:
-1. Go to https://www.kaggle.com/datasets/thoughtvector/customer-support-on-twitter
-2. Click **Download** → `customer-support-on-twitter.zip`
-3. Extract and place `twcs.csv` in `data/raw/twcs.csv`
+**Manual download**:
+1. Go to [kaggle.com/datasets/thoughtvector/customer-support-on-twitter](https://www.kaggle.com/datasets/thoughtvector/customer-support-on-twitter)
+2. Download and extract — place `twcs.csv` at `data/raw/twcs.csv`
 
 ---
 
-### Step 4 — Run the full pipeline
+### Step 4 — Run the pipeline
 
 ```bash
-# 4a. Ingest + filter SpotifyCare data (subsample 10k tweets)
+# Ingest + filter SpotifyCare data (subsamples to 10k tweets)
 python -m src.pipeline.ingest
 
-# 4b. Clean tweets, build threads
+# Clean tweets and rebuild conversation threads
 python -m src.pipeline.preprocess
 
-# 4c. Generate embeddings — FREE with local model (downloads ~90MB once)
+# Generate embeddings locally (downloads ~90MB model once, then cached)
 python -m src.pipeline.embed
-
-# Optional: use OpenAI instead (~$0.02 for 10k messages)
-# python -m src.pipeline.embed --backend openai
 ```
 
-After these 3 steps, `data/processed/` will contain:
-- `spotify_raw.csv` — filtered raw tweets  
-- `threads.csv` — reconstructed conversation threads  
-- `clean.csv` — cleaned, ready-to-use dataset  
-- `embeddings.npy` — pre-computed embeddings (cached)  
+After these three steps `data/processed/` will contain:
+- `spotify_raw.csv` — filtered raw tweets
+- `threads.csv` — reconstructed conversation threads
+- `clean.csv` — cleaned dataset ready for use
+- `embeddings.npy` — pre-computed embeddings (cached for all future runs)
 
 ---
 
@@ -89,31 +79,30 @@ After these 3 steps, `data/processed/` will contain:
 python -m src.eval.build_golden_set
 ```
 
-Generates `data/golden_set.csv` — 200 stratified examples with:
-- `true_intent` labels (LLM-classified from a 2k sample, manually reviewed)
-- `escalate_label` (0 = auto, 1 = escalate) — determined by hard rules, free
-- `true_brand_reply` — the actual SpotifyCare reply from the dataset
+Generates `data/golden_set.csv` — 170 stratified examples (roughly 19 per intent) with:
+- `true_intent` — LLM-classified labels, manually reviewed
+- `escalate_label` — 0 (auto) or 1 (escalate), set by deterministic hard rules
+- `true_brand_reply` — the real SpotifyCare reply from the dataset
 
-> **Note on labelling**: The initial intent labels are LLM-generated from a 2k sample (~$0.01). Manually review and correct `true_intent` in `data/golden_set.csv` before final evaluation. See `DECISION_LOG.md` D9 for the methodology.
+> The golden set is already included in the repo. You only need to re-run this if you want to regenerate it from scratch. See `DECISION_LOG.md` D9 for the sampling methodology.
 
 ---
 
 ### Step 6 — Run evaluation
 
 ```bash
-# Full metrics: intent accuracy, ROUGE-L, escalation F1
-# Compares AI agent vs. 2 baselines
+# Intent accuracy, ROUGE-L, escalation F1 — agent vs. 2 baselines
 python -m src.eval.metrics
 
-# LLM-as-judge (30 examples, free with Gemini)
+# LLM-as-judge: 4-dimension rubric scored by Gemini (30 examples)
 python -m src.eval.llm_judge --n 30
 
-# Unit tests (no API calls needed)
+# Unit tests — no API calls required
 pytest tests/ -v
 ```
 
-Results are saved to `eval/results.json` and `eval/judge_scores.csv`.  
-Human-agreement analysis (Cohen's κ) is pre-computed in `eval/judge_human_agreement.md`.
+Results are written to `eval/results.json` and `eval/judge_scores.csv`.  
+Human-agreement analysis (Cohen's κ = 0.952) is in `eval/judge_human_agreement.md`.
 
 ---
 
@@ -126,7 +115,7 @@ python -m src.agent.classifier "My Spotify keeps crashing on my iPhone 15"
 # Draft a reply
 python -m src.agent.reply_drafter "All my downloaded songs disappeared after the update"
 
-# Make an escalation decision
+# Get an escalation decision
 python -m src.agent.escalation "You charged me twice and I'm calling my bank"
 ```
 
@@ -144,19 +133,19 @@ Raw Twitter CSV (twcs.csv, ~3M tweets)
 [2. Preprocess]  clean text → build threads → add metadata
          │
          ▼
-[3. Embed]  all-MiniLM-L6-v2 (local, free) → embeddings.npy (cached)
+[3. Embed]  all-MiniLM-L6-v2 (local) → embeddings.npy (cached)
          │
          ▼
 [4. AI Agent]
   ├── Classifier     — few-shot Gemini Flash Lite → {intent, confidence}
-  ├── Reply Drafter  — cosine-similarity RAG → prompt → {draft_reply}
-  └── Escalation     — hard rules → LLM judgment → {auto | escalate, reason}
+  ├── Reply Drafter  — cosine-similarity RAG → {draft_reply}
+  └── Escalation     — hard rules → LLM triage → {auto | escalate, reason}
          │
          ▼
 [5. Evaluation]
-  ├── Golden Set (200 hand-labelled examples, stratified)
-  ├── Auto metrics: Accuracy, Macro-F1, ROUGE-L, BERTScore, Escalation P/R/F1
-  └── LLM Judge: 4-dimension rubric (0-20) + Cohen's κ human agreement
+  ├── Golden Set (170 hand-labelled examples, stratified across 9 intents)
+  ├── Auto metrics: Accuracy, Macro-F1, ROUGE-L, Escalation P/R/F1
+  └── LLM Judge: 4-dimension rubric (0–20) + Cohen's κ human agreement
 ```
 
 ---
@@ -180,37 +169,37 @@ Raw Twitter CSV (twcs.csv, ~3M tweets)
 ## File Structure
 
 ```
-hiver-support-agent/
+spotifycare-ai-support-agent/
 ├── README.md
 ├── requirements.txt
 ├── DECISION_LOG.md
 ├── .env.example
 ├── data/
-│   ├── raw/                     # twcs.csv (place here — gitignored)
+│   ├── raw/                     # place twcs.csv here (gitignored)
 │   ├── processed/               # pipeline outputs (gitignored)
-│   └── golden_set.csv           # 200 hand-labelled examples
+│   └── golden_set.csv           # 170 hand-labelled examples
 ├── notebooks/
 │   ├── 01_eda.ipynb             # EDA + brand selection
-│   └── 02_intent_discovery.ipynb  # clustering → intent labels
+│   └── 02_intent_discovery.ipynb  # clustering → intent taxonomy
 ├── src/
 │   ├── pipeline/
-│   │   ├── ingest.py            # load + filter SpotifyCare data
+│   │   ├── ingest.py            # filter SpotifyCare data + subsample
 │   │   ├── preprocess.py        # clean tweets, build threads
-│   │   └── embed.py             # OpenAI embeddings + cache
+│   │   └── embed.py             # local embeddings + cache
 │   ├── agent/
-│   │   ├── classifier.py        # intent classifier (few-shot GPT-4o-mini)
+│   │   ├── classifier.py        # intent classifier (few-shot Gemini Flash Lite)
 │   │   ├── reply_drafter.py     # RAG-based reply generation
-│   │   └── escalation.py        # rules + LLM escalation engine
+│   │   └── escalation.py        # two-layer escalation engine
 │   └── eval/
 │       ├── build_golden_set.py  # stratified sampling + LLM annotation
-│       ├── metrics.py           # accuracy, F1, ROUGE, BERTScore
+│       ├── metrics.py           # accuracy, F1, ROUGE-L, escalation metrics
 │       └── llm_judge.py         # LLM-as-judge rubric
 ├── eval/
-│   ├── results.json             # evaluation outputs
+│   ├── results.json             # full evaluation results
 │   ├── judge_scores.csv         # per-example judge scores
 │   └── judge_human_agreement.md # Cohen's κ analysis
 ├── report/
-│   └── report.md               # 6-page evaluation report
+│   └── report.md                # evaluation report (problem framing → next steps)
 └── tests/
     ├── test_pipeline.py         # pipeline unit tests (no API needed)
     └── test_escalation.py       # escalation rule tests (no API needed)
@@ -218,23 +207,22 @@ hiver-support-agent/
 
 ---
 
-## Estimated Costs
+## API Cost
 
-| Step | Old cost | New cost | Notes |
-|------|----------|----------|-------|
-| Embeddings (`all-MiniLM-L6-v2`, local) | **$0.00** | One-time ~90MB model download |
-| Build golden set (2k classify + rules) | **~$0.01** | Classify 2k sample; escalation = rules only |
-| Agent evaluation (50 examples) | **~$0.05** | Use `--eval-sample 200` for full run |
-| LLM judge (30 examples) | **~$0.03** | Use `--n 50` for broader coverage |
-| **Total** | **~$0.09** | **~83% reduction** |
+Everything runs on **free-tier Gemini** (no credit card required). The only costs are:
 
-> **Want to spend more for better coverage?**  
-> `python -m src.eval.metrics --eval-sample 200` — full 200-example agent eval (~$0.30)  
-> `python -m src.eval.llm_judge --n 50` — judge 50 examples (~$0.05)
+| Step | Cost |
+|------|------|
+| Embeddings (local `all-MiniLM-L6-v2`) | $0.00 |
+| Build golden set (Gemini Flash Lite, free tier) | $0.00 |
+| Evaluation — 170 examples | $0.00 |
+| LLM judge — 30 examples | $0.00 |
+| **Total** | **$0.00** |
 
 ---
 
-## Key design decisions
+## Key Documents
 
-See [`DECISION_LOG.md`](DECISION_LOG.md) for the full list of 15 non-obvious decisions.  
-See [`report/report.md`](report/report.md) for results, failure analysis, and next steps.
+- [`DECISION_LOG.md`](DECISION_LOG.md) — 15 non-obvious decisions made during the project and why
+- [`report/report.md`](report/report.md) — results vs. baselines, failure analysis, and what I'd do next
+- [`eval/judge_human_agreement.md`](eval/judge_human_agreement.md) — Cohen's κ between Gemini judge and human scorer
